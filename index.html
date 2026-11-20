@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>🎨 رسم وتخمين</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  :root {
+    --primary: #00f3ff; --secondary: #ff00ea; --success: #00ff88;
+    --danger: #ff3333; --warning: #ffcc00; --dark-bg: #09090b;
+    --glass: rgba(255, 255, 255, 0.05); --glass-border: rgba(255, 255, 255, 0.1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; -webkit-tap-highlight-color: transparent; }
+  body {
+    background-color: var(--dark-bg); color: white; height: 100dvh; overflow: hidden; display: flex; flex-direction: column;
+    background-image: radial-gradient(circle at 15% 50%, rgba(0, 243, 255, 0.15), transparent 25%),
+      radial-gradient(circle at 85% 30%, rgba(255, 0, 234, 0.15), transparent 25%);
+  }
+  .screen { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100dvh; padding: 20px; z-index: 10; }
+  .screen.active { display: flex; }
+  .glass-panel { background: var(--glass); backdrop-filter: blur(16px); border: 1px solid var(--glass-border); padding: 40px 30px; border-radius: 24px; width: 100%; max-width: 400px; text-align: center; }
+  .logo-title { font-size: 36px; font-weight: 900; background: linear-gradient(to right, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px; }
+  input { width: 100%; padding: 16px; margin: 10px 0; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; color: white; font-size: 18px; text-align: center; }
+  input:focus { outline: none; border-color: var(--primary); }
+  .btn { width: 100%; padding: 16px; margin: 10px 0; border: none; border-radius: 12px; font-size: 18px; font-weight: 700; cursor: pointer; }
+  .btn-primary { background: linear-gradient(45deg, #00f3ff, #0051ff); color: white; }
+  .btn-secondary { background: transparent; border: 2px solid var(--secondary); color: var(--secondary); }
+  .code-display { font-size: 56px; font-weight: 900; letter-spacing: 10px; color: var(--primary); margin: 20px 0; font-family: monospace; }
+
+  .game-container { display: none; flex-direction: column; height: 100dvh; width: 100vw; overflow: hidden; }
+  .game-container.active { display: flex; }
+  .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 5px 15px; background: rgba(0,0,0,0.6); border-bottom: 1px solid var(--glass-border); height: 60px; flex-shrink: 0; }
+  .score-box { display: flex; gap: 20px; align-items: center; width: 100%; justify-content: center; }
+  .score-item { text-align: center; position: relative; }
+  .score-name { font-size: 12px; color: #aaa; font-weight: bold; }
+  .score-val { font-size: 20px; font-weight: 900; color: var(--success); }
+  .warnings { color: var(--warning); font-size: 14px; position: absolute; top: -10px; right: -20px; letter-spacing: 1px; }
+  .timer-container { width: 100%; height: 6px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+  .timer-bar { height: 100%; width: 100%; background: var(--primary); transition: width 1s linear, background-color 0.5s; }
+  .word-display { text-align: center; padding: 8px; flex-shrink: 0; background: rgba(0, 243, 255, 0.1); font-size: 20px; font-weight: 900; color: var(--primary); letter-spacing: 2px; }
+
+  .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; padding: 5px; min-height: 0; }
+  canvas { background: #fff; border-radius: 12px; touch-action: none; max-width: 100%; max-height: 100%; cursor: crosshair; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  .tools-bar { display: flex; gap: 10px; padding: 8px; background: rgba(0,0,0,0.6); justify-content: center; align-items: center; flex-shrink: 0; }
+  .color-btn { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .color-btn.active { border-color: white; transform: scale(1.1); }
+  .tool-btn { background: var(--glass); border: 1px solid var(--glass-border); color: white; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+
+  .chat-area { height: 35%; min-height: 160px; display: flex; flex-direction: column; background: rgba(0,0,0,0.9); flex-shrink: 0; border-top: 1px solid var(--glass-border); }
+  .chat-header { display: flex; justify-content: space-between; padding: 5px 10px; background: rgba(255,255,255,0.05); font-size: 12px; color: var(--warning); }
+  .messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .msg { padding: 6px 10px; border-radius: 8px; font-size: 14px; background: rgba(255,255,255,0.1); align-self: flex-start; max-width: 80%; }
+  .msg.mine { background: rgba(0, 243, 255, 0.2); align-self: flex-end; }
+  .msg.correct { background: rgba(0, 255, 136, 0.2); border: 1px solid var(--success); color: var(--success); font-weight: bold; }
+  .msg.system { background: transparent; color: var(--danger); font-size: 12px; align-self: center; font-weight: bold; }
+
+  .guess-input-area { display: flex; padding: 10px; gap: 10px; background: rgba(0,0,0,0.95); flex-shrink: 0; }
+  .guess-input-area input { margin: 0; text-align: right; padding: 12px; font-size: 16px; flex: 1; }
+  .guess-input-area button { margin: 0; padding: 0 20px; width: auto; font-size: 16px; border-radius: 12px; }
+
+  .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); display: none; justify-content: center; align-items: center; z-index: 100; }
+  .modal.active { display: flex; }
+</style>
+</head>
+<body>
+
+  <div id="screen-home" class="screen active">
+    <div class="glass-panel">
+      <h1 class="logo-title">NEON DRAW</h1>
+      <button class="btn btn-primary" onclick="createRoom()">➕ إنشاء غرفة</button>
+      <button class="btn btn-secondary" onclick="showScreen('screen-join')">🔗 انضمام بكود</button>
+    </div>
+  </div>
+
+  <div id="screen-join" class="screen">
+    <div class="glass-panel">
+      <h2>ادخل الكود</h2>
+      <input type="number" id="join-code" placeholder="1234" maxlength="4" inputmode="numeric">
+      <button class="btn btn-primary" onclick="joinRoom()" id="join-btn">دخول</button>
+      <button class="btn btn-secondary" onclick="showScreen('screen-home')">رجوع</button>
+      <p id="join-error" style="color:var(--danger); font-size:14px; margin-top:10px;"></p>
+    </div>
+  </div>
+
+  <div id="screen-waiting" class="screen">
+    <div class="glass-panel">
+      <h2>الغرفة جاهزة!</h2>
+      <div class="code-display" id="room-code-display">----</div>
+      <p style="color:var(--primary);">مستني حد ييجي...</p>
+      <button class="btn btn-secondary" style="margin-top:20px;" onclick="cancelRoom()">إلغاء</button>
+    </div>
+  </div>
+
+  <div id="game-container" class="game-container">
+    <div class="top-bar">
+      <div class="score-box">
+        <div class="score-item">
+          <div class="score-name">أنت</div>
+          <div class="score-val" id="my-score">0</div>
+          <div class="warnings" id="my-warnings"></div>
+        </div>
+        <div style="color:#555; font-weight:bold;">VS</div>
+        <div class="score-item">
+          <div class="score-name">الخصم</div>
+          <div class="score-val" id="opp-score">0</div>
+          <div class="warnings" id="opp-warnings"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="timer-container">
+      <div class="timer-bar" id="timer-bar"></div>
+    </div>
+
+    <div class="word-display" id="word-display">---</div>
+
+    <div class="main-area">
+      <div class="canvas-container">
+        <canvas id="drawing-canvas" width="800" height="600"></canvas>
+      </div>
+      
+      <div class="tools-bar" id="drawer-tools" style="display:none;">
+        <div class="color-btn active" style="background:#000;" onclick="setColor('#000', this)"></div>
+        <div class="color-btn" style="background:#ff3333;" onclick="setColor('#ff3333', this)"></div>
+        <div class="color-btn" style="background:#00f3ff;" onclick="setColor('#00f3ff', this)"></div>
+        <div class="color-btn" style="background:#00ff88;" onclick="setColor('#00ff88', this)"></div>
+        <button class="tool-btn" onclick="setColor('#fff')">ممحاة</button>
+        <button class="tool-btn" onclick="clearCanvas(true)" style="color:var(--danger);">مسح</button>
+      </div>
+    </div>
+
+    <div class="chat-area">
+      <div class="chat-header" id="chat-header">
+        <span>التخمينات:</span>
+        <span id="guesses-left-text">متبقي: 3</span>
+      </div>
+      <div class="messages" id="chat-messages"></div>
+      <div class="guess-input-area" id="guesser-tools">
+        <input type="text" id="guess-input" placeholder="اكتب تخمينك هنا..." onkeypress="if(event.key === 'Enter') sendGuess()">
+        <button class="btn btn-primary" onclick="sendGuess()">تخمين</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="round-modal">
+    <div class="glass-panel" style="text-align:center;">
+      <h1 id="modal-title" style="font-size:32px; margin-bottom:10px;">اللعبة انتهت!</h1>
+      <p id="modal-desc" style="color:#aaa; margin-bottom:20px; white-space: pre-line;">...</p>
+      <button class="btn btn-primary" id="modal-btn" onclick="startNewRound()">الجولة الجاية</button>
+    </div>
+  </div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD7WYn9T1-r2NlF-kMcuQWN07T5wxQRcbw",
+    authDomain: "ddmm-d24cf.firebaseapp.com",
+    databaseURL: "https://ddmm-d24cf-default-rtdb.firebaseio.com",
+    projectId: "ddmm-d24cf",
+    storageBucket: "ddmm-d24cf.firebasestorage.app",
+    messagingSenderId: "1070949465971",
+    appId: "1:1070949465971:web:ca001b27495aaa984b4f06"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const WORDS = ["تفاحة", "سيارة", "شمس", "قمر", "بيت", "شجرة", "كتاب", "قهوة", "بحر", "ساعة", "موبايل", "كرسي", "قلم", "قطة", "كلب", "طيار", "صحراء", "مفتاح", "نظارة", "عصفور", "مدرسة"];
+  const ROUND_TIME = 60; 
+
+  let state = {
+    role: null, roomCode: null, currentDrawer: null, currentWord: '',
+    myScore: 0, oppScore: 0, myWarnings: 0, oppWarnings: 0,
+    myGuesses: 3, oppGuesses: 3, isDrawingMode: false, color: '#000',
+    gameActive: false, startTime: 0, timerInterval: null
+  };
+
+  let roomRef = null;
+  let canvas, ctx;
+  let isPainting = false;
+  let lastX = 0, lastY = 0;
+  let isJoining = false;
+  let canvasInitialized = false;
+
+  // دالة تنظيف النص (عشان التخمين الذكي)
+  function normalizeText(text) {
+    return text.trim().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[\u064B-\u065F]/g, '');
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function randomCode() { return String(Math.floor(1000 + Math.random() * 9000)); }
+  
+  function getRandomWord() { return WORDS[Math.floor(Math.random() * WORDS.length)]; }
+
+  function createRoom() {
+    const code = randomCode();
+    state.role = 'host';
+    state.roomCode = code;
+    document.getElementById('room-code-display').innerText = code;
+    showScreen('screen-waiting');
+
+    roomRef = db.ref('draw-rooms/' + code);
+    roomRef.set({
+      host: true, guest: false, status: 'waiting', 
+      currentDrawer: 'host', word: getRandomWord(), // الكلمة بتتسحب فوراً
+      scoreHost: 0, scoreGuest: 0, warningsHost: 0, warningsGuest: 0,
+      guessesHost: 3, guessesGuest: 3, startTime: Date.now()
+    });
+
+    setupChatListener();
+
+    roomRef.on('value', snap => {
+      const data = snap.val();
+      if (!data) return;
+      if (data.status === 'playing' || data.status === 'roundOver' || data.status === 'gameOver') {
+        syncGame(data);
+      }
+    });
+  }
+
+  function joinRoom() {
+    if (isJoining) return;
+    const code = document.getElementById('join-code').value.trim();
+    if (code.length !== 4) return document.getElementById('join-error').innerText = 'الكود 4 أرقام!';
+
+    isJoining = true;
+    document.getElementById('join-btn').innerText = 'جاري الدخول...';
+
+    roomRef = db.ref('draw-rooms/' + code);
+    roomRef.once('value').then(snap => {
+      const data = snap.val();
+      if (!data) {
+        isJoining = false; document.getElementById('join-btn').innerText = 'دخول';
+        return document.getElementById('join-error').innerText = 'الغرفة غير موجودة!';
+      }
+      if (data.guest) {
+        isJoining = false; document.getElementById('join-btn').innerText = 'دخول';
+        return document.getElementById('join-error').innerText = 'الغرفة مليانة!';
+      }
+
+      state.role = 'guest';
+      state.roomCode = code;
+      
+      // لما الضيف يدخل، بنجبر اللعبة تبدأ صح
+      roomRef.update({ guest: true, status: 'playing', startTime: Date.now() });
+      
+      setupChatListener();
+
+      roomRef.on('value', snap => {
+        const d = snap.val();
+        if (d && (d.status === 'playing' || d.status === 'roundOver' || d.status === 'gameOver')) {
+          syncGame(d);
+        }
+      });
+    });
+  }
+
+  function setupChatListener() {
+    db.ref('draw-rooms/' + state.roomCode + '/chat').on('child_added', snap => {
+      const msg = snap.val();
+      const chatBox = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = 'msg ' + (msg.sender === state.role ? 'mine' : 'theirs');
+      if (msg.isCorrect) div.classList.add('correct');
+      if (msg.isSystem) div.classList.add('system');
+      div.innerText = msg.isSystem ? msg.text : (msg.sender === state.role ? 'أنت: ' : 'الخصم: ') + msg.text;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+  }
+
+  function startNewRound() {
+    if (state.role !== 'host') return;
+    
+    document.getElementById('round-modal').classList.remove('active');
+    const nextDrawer = state.currentDrawer === 'host' ? 'guest' : 'host';
+    
+    roomRef.update({
+      status: 'playing', currentDrawer: nextDrawer, word: getRandomWord(),
+      drawingData: null, startTime: Date.now(), guessesHost: 3, guessesGuest: 3
+    });
+    roomRef.child('chat').remove(); 
+    clearCanvas(false);
+  }
+
+  function syncGame(data) {
+    if (!data) return;
+
+    if (!document.getElementById('game-container').classList.contains('active')) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('game-container').classList.add('active');
+      if (!canvasInitialized) { initCanvas(); canvasInitialized = true; }
+    }
+
+    if (data.status === 'playing') {
+      document.getElementById('round-modal').classList.remove('active');
+      // لو جولة جديدة، نظف
+      if (state.startTime !== data.startTime) {
+        clearCanvas(false);
+        document.getElementById('chat-messages').innerHTML = ''; 
+      }
+    }
+
+    if (data.status === 'gameOver' || data.status === 'roundOver') {
+      clearInterval(state.timerInterval);
+      state.gameActive = false;
+      
+      if (data.status === 'gameOver') {
+        document.getElementById('modal-title').innerText = data.winner === state.role ? '🏆 أنت كسبت الماتش!' : '💀 تم طرد الخصم!';
+        document.getElementById('modal-title').style.color = data.winner === state.role ? 'var(--success)' : 'var(--danger)';
+        document.getElementById('modal-desc').innerText = data.endReason;
+        document.getElementById('modal-btn').style.display = 'none'; 
+      } else {
+        if (data.winner === 'none') {
+          document.getElementById('modal-title').innerText = '⏰ انتهت الجولة!';
+          document.getElementById('modal-title').style.color = 'var(--warning)';
+        } else {
+          document.getElementById('modal-title').innerText = data.winner === state.role ? '🎉 أنت كسبت الجولة!' : '😢 الخصم كسب';
+          document.getElementById('modal-title').style.color = data.winner === state.role ? 'var(--success)' : 'var(--secondary)';
+        }
+        
+        document.getElementById('modal-desc').innerText = `الكلمة كانت: ${data.word}\n${data.endReason || ''}`;
+        document.getElementById('modal-btn').style.display = state.role === 'host' ? 'block' : 'none';
+        if (state.role !== 'host') document.getElementById('modal-desc').innerText += '\n\n(مستني صاحبك يبدأ...)';
+      }
+      document.getElementById('round-modal').classList.add('active');
+      return;
+    }
+
+    state.currentDrawer = data.currentDrawer;
+    state.currentWord = data.word;
+    state.startTime = data.startTime;
+    state.myScore = state.role === 'host' ? data.scoreHost : data.scoreGuest;
+    state.oppScore = state.role === 'host' ? data.scoreGuest : data.scoreHost;
+    state.myWarnings = state.role === 'host' ? data.warningsHost : data.warningsGuest;
+    state.oppWarnings = state.role === 'host' ? data.warningsGuest : data.warningsHost;
+    state.myGuesses = state.role === 'host' ? data.guessesHost : data.guessesGuest;
+
+    document.getElementById('my-score').innerText = state.myScore;
+    document.getElementById('opp-score').innerText = state.oppScore;
+    document.getElementById('my-warnings').innerText = '⚠️'.repeat(state.myWarnings);
+    document.getElementById('opp-warnings').innerText = '⚠️'.repeat(state.oppWarnings);
+    document.getElementById('guesses-left-text').innerText = `متبقي: ${state.myGuesses}`;
+
+    const amIDrawer = state.role === state.currentDrawer;
+
+    if (amIDrawer) {
+      // إظهار الكلمة للرسام
+      document.getElementById('word-display').innerText = state.currentWord;
+      document.getElementById('drawer-tools').style.display = 'flex';
+      document.getElementById('guesser-tools').style.display = 'none';
+      document.getElementById('chat-header').style.display = 'none';
+      state.isDrawingMode = true;
+    } else {
+      // إخفاء الكلمة عن المخمن
+      document.getElementById('word-display').innerText = '???';
+      document.getElementById('drawer-tools').style.display = 'none';
+      document.getElementById('guesser-tools').style.display = 'flex';
+      document.getElementById('chat-header').style.display = 'flex';
+      state.isDrawingMode = false;
+
+      const input = document.getElementById('guess-input');
+      const btn = document.querySelector('#guesser-tools button');
+      if (state.myGuesses <= 0) {
+        input.disabled = true; btn.disabled = true; input.placeholder = 'خلصت التخمينات!';
+      } else {
+        input.disabled = false; btn.disabled = false; input.placeholder = 'اكتب تخمينك هنا...';
+      }
+    }
+
+    if (data.status === 'playing' && !state.gameActive) {
+      state.gameActive = true;
+      startTimer();
+    }
+  }
+
+  function startTimer() {
+    clearInterval(state.timerInterval);
+    state.timerInterval = setInterval(() => {
+      if (!state.gameActive) return;
+      
+      const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+      const timeLeft = Math.max(0, ROUND_TIME - elapsed);
+      
+      const bar = document.getElementById('timer-bar');
+      bar.style.width = (timeLeft / ROUND_TIME) * 100 + '%';
+      bar.style.background = timeLeft <= 10 ? 'var(--danger)' : 'var(--primary)';
+
+      if (timeLeft <= 0) {
+        clearInterval(state.timerInterval);
+        state.gameActive = false;
+        
+        if (state.role === 'host') {
+          roomRef.once('value').then(snap => {
+             const data = snap.val();
+             if (data.status !== 'playing') return; // لو الجولة خلصت بفعل تخمين أو حاجة
+
+             let drawerWarnings = data.currentDrawer === 'host' ? data.warningsHost : data.warningsGuest;
+             let drawerScore = data.currentDrawer === 'host' ? data.scoreHost : data.scoreGuest;
+             const warningField = data.currentDrawer === 'host' ? 'warningsHost' : 'warningsGuest';
+             const scoreField = data.currentDrawer === 'host' ? 'scoreHost' : 'scoreGuest';
+             const guesserScoreField = data.currentDrawer === 'host' ? 'scoreGuest' : 'scoreHost';
+             const currentGuesserScore = data.currentDrawer === 'host' ? data.scoreGuest : data.scoreHost;
+             
+             drawerWarnings += 1;
+             let endMsg = `الوقت خلص! المخمن خسر 5 نقاط.`;
+             if (drawerWarnings >= 3) {
+               drawerScore = Math.max(0, drawerScore - 20);
+               drawerWarnings = 0;
+               endMsg += `\nالرسام وصل 3 إنذارات وخسر 20 نقطة!`;
+             } else {
+               endMsg += `\nالرسام أخد إنذار (${drawerWarnings}/3).`;
+             }
+
+             roomRef.update({
+               status: 'roundOver', winner: 'none',
+               [warningField]: drawerWarnings, [scoreField]: drawerScore,
+               [guesserScoreField]: Math.max(0, currentGuesserScore - 5), endReason: endMsg
+             });
+          });
+        }
+      }
+    }, 1000);
+  }
+
+  function initCanvas() {
+    canvas = document.getElementById('drawing-canvas');
+    ctx = canvas.getContext('2d');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    canvas.addEventListener('touchstart', handleTouchStart, {passive: false});
+    canvas.addEventListener('touchmove', handleTouchMove, {passive: false});
+    canvas.addEventListener('touchend', stopDrawing);
+    
+    roomRef.child('drawingData').on('child_added', snap => {
+      const point = snap.val();
+      if (!state.isDrawingMode) drawLine(point.x0, point.y0, point.x1, point.y1, point.color, point.width);
+    });
+  }
+
+  function getCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    let clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    let clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  }
+
+  function handleTouchStart(e) { e.preventDefault(); startDrawing(e); }
+  function handleTouchMove(e) { e.preventDefault(); draw(e); }
+
+  function startDrawing(e) {
+    if (!state.isDrawingMode) return;
+    isPainting = true;
+    const coords = getCoords(e);
+    lastX = coords.x; lastY = coords.y;
+  }
+
+  function draw(e) {
+    if (!isPainting || !state.isDrawingMode) return;
+    const coords = getCoords(e);
+    const currentX = coords.x; const currentY = coords.y;
+    const width = state.color === '#fff' ? 20 : 4;
+
+    drawLine(lastX, lastY, currentX, currentY, state.color, width);
+    roomRef.child('drawingData').push({ x0: lastX, y0: lastY, x1: currentX, y1: currentY, color: state.color, width: width });
+    lastX = currentX; lastY = currentY;
+  }
+
+  function stopDrawing() { isPainting = false; }
+
+  function drawLine(x0, y0, x1, y1, color, width) {
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke(); ctx.closePath();
+  }
+
+  function setColor(c, btn) {
+    state.color = c;
+    if (btn) {
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+  }
+
+  function clearCanvas(sync) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (sync && state.isDrawingMode) roomRef.update({ drawingData: null });
+  }
+
+  function sendGuess() {
+    const input = document.getElementById('guess-input');
+    const val = input.value.trim();
+    if (!val || state.isDrawingMode || state.myGuesses <= 0) return;
+
+    const isCorrect = normalizeText(val) === normalizeText(state.currentWord) || 
+                      (val.length >= 3 && normalizeText(state.currentWord).includes(normalizeText(val)));
+
+    roomRef.child('chat').push({ sender: state.role, text: val, isCorrect: isCorrect });
+
+    if (isCorrect) {
+      roomRef.once('value').then(snap => {
+        const data = snap.val();
+        if (data.status !== 'playing') return; 
+
+        const timeTaken = Math.floor((Date.now() - data.startTime) / 1000);
+        const points = Math.max(10, ROUND_TIME - timeTaken); 
+        const scoreField = state.role === 'host' ? 'scoreHost' : 'scoreGuest';
+        const currentScore = state.role === 'host' ? data.scoreHost : data.scoreGuest;
+        
+        roomRef.update({
+          status: 'roundOver', winner: state.role,
+          [scoreField]: currentScore + points,
+          endReason: `خمن صح في ${timeTaken} ثانية وحصل على +${points} نقطة!`
+        });
+      });
+      input.value = '';
+    } else {
+      input.value = '';
+      const guessesField = state.role === 'host' ? 'guessesHost' : 'guessesGuest';
+      const scoreField = state.role === 'host' ? 'scoreHost' : 'scoreGuest';
+      const newGuesses = state.myGuesses - 1;
+      
+      if (newGuesses === 0) {
+        // خلص التخمينات.. يخسر 10 نقاط والجولة تخلص
+        roomRef.once('value').then(snap => {
+          const data = snap.val();
+          if (data.status !== 'playing') return;
+          
+          const currentScore = state.role === 'host' ? data.scoreHost : data.scoreGuest;
+          roomRef.update({
+            [guessesField]: 0,
+            [scoreField]: Math.max(0, currentScore - 10),
+            status: 'roundOver', winner: 'none',
+            endReason: 'خلصت الـ 3 تخمينات، وخسرت 10 نقاط فوراً!'
+          });
+        });
+      } else {
+        roomRef.update({ [guessesField]: newGuesses });
+      }
+    }
+  }
+
+  function cancelRoom() {
+    if (state.role === 'host' && roomRef) roomRef.remove();
+    location.reload();
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (state.role === 'host' && state.roomCode) db.ref('draw-rooms/' + state.roomCode).remove();
+    if (state.role === 'guest' && state.roomCode) db.ref('draw-rooms/' + state.roomCode + '/guest').set(false);
+  });
+
+  window.onload = () => { showScreen('screen-home'); };
+</script>
+</body>
+</html>
